@@ -1,0 +1,8 @@
+{
+  "records_processed": 1,
+  "role_records": 3,
+  "plan_length_histogram": {
+    "3": 1
+  },
+  "tokenizer_hint": "/Users/loganrobbins/thesis_4_v1/gpt-oss-20b/tokenizer"
+}

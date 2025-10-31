@@ -1,0 +1,13 @@
+{
+  "records": 3,
+  "notes_dim": 2048,
+  "teacher_zero_records": 0,
+  "student_zero_records": 0,
+  "avg_teacher_norm": 64.02467661321907,
+  "avg_student_norm": 64.02467661321907,
+  "role_counts": {
+    "core": 1,
+    "intro": 1,
+    "wrap": 1
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "added_tokens": [
+    "<plan>",
+    "<notes>",
+    "<rollback>",
+    "<commit>"
+  ],
+  "identifier": "/Users/loganrobbins/thesis_4_v1/gpt-oss-20b/tokenizer",
+  "is_fast": true,
+  "padding_side": "right",
+  "source": "custom",
+  "special_tokens": [
+    "<plan>",
+    "<notes>",
+    "<rollback>",
+    "<commit>"
+  ],
+  "tokenizer_class": "PreTrainedTokenizerFast",
+  "truncation_side": "right",
+  "vocab_size": 199998
+}

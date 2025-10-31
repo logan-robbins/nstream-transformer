@@ -1,0 +1,58 @@
+[project]
+name = "nstream-transformer"
+version = "0.1.0"
+description = "Toy N-Stream Transformer architecture scaffold inspired by DeepSeek."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Logan Robbins" }
+]
+license = { text = "MIT" }
+keywords = ["transformer", "multistream", "deepseek", "ml"]
+
+# Core dev dependencies kept lightweight for macOS CPU iteration.
+dependencies = [
+  "pydantic>=2.9.0",
+  "omegaconf>=2.3.0",
+  "matplotlib>=3.10.6",
+  "transformers>=4.56.2",
+  "torch>=2.9.0",
+  "tiktoken>=0.7.0",
+  "protobuf>=4.25.3",
+  "accelerate>=0.34.2",
+  "pandoc>=2.4",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.2",
+  "pytest-cov>=5.0",
+]
+notebook = [
+  "jupyterlab>=4.2",
+]
+# Data ingestion and preprocessing dependencies.
+data = [
+  "datasets>=2.20",
+  "transformers>=4.44",
+]
+# GPU stack to be installed on CUDA hosts only.
+gpu = [
+  "torch>=2.4.0",
+  "xformers>=0.0.28",
+]
+
+[tool.uv]
+dev-dependencies = [
+  "ruff>=0.6.3",
+  "mypy>=1.11",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.2"
+addopts = "-ra --showlocals"
+testpaths = ["tests"]

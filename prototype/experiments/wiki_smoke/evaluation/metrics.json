@@ -1,0 +1,39 @@
+{
+  "ablations": [],
+  "agreement": {
+    "f1": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "records": 10.0
+  },
+  "coverage": {
+    "articles": 10,
+    "avg_entities_per_article": 871.6,
+    "compactness_mean": 0.0060186210834107644,
+    "compactness_within_range_ratio": 0.0,
+    "coverage_entries": 0,
+    "cross_references": 0,
+    "definition_count": 5,
+    "entity_persistence": 1.0,
+    "fact_count": 0,
+    "fact_coverage": 0.0,
+    "inconsistency_rate": 0.0,
+    "notes_ratio_target": {
+      "max": 0.2,
+      "min": 0.1
+    },
+    "reconstruction_score": 0.004513664805250643,
+    "total_entities": 8716,
+    "unique_entities": 3719
+  },
+  "latency": {
+    "alpha": 0.0,
+    "beta": 0.0,
+    "gamma": 0.0
+  },
+  "rollback": {
+    "avg_confidence": 1.0,
+    "evaluations": 16.5,
+    "rollback_events": 0.0
+  }
+}

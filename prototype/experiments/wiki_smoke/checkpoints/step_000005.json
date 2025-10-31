@@ -1,0 +1,227 @@
+{
+  "global_step": 5,
+  "model_config": {
+    "latent_dim": 512,
+    "model_dim": 1024,
+    "moe": {
+      "expert_dim": 512,
+      "num_experts": 2,
+      "router_temperature": 1.0,
+      "router_type": "softmax"
+    },
+    "planner": {
+      "latent_dim": 128,
+      "max_plan_tokens": 128,
+      "model_dim": 256,
+      "num_heads": 4,
+      "num_layers": 2
+    },
+    "roles": [
+      {
+        "adapter_rank": 4,
+        "name": "intro",
+        "notes_layers": 1,
+        "surface_layers": 1
+      },
+      {
+        "adapter_rank": 4,
+        "name": "core",
+        "notes_layers": 1,
+        "surface_layers": 1
+      },
+      {
+        "adapter_rank": 4,
+        "name": "wrap",
+        "notes_layers": 1,
+        "surface_layers": 1
+      }
+    ],
+    "rotary_dim": 128,
+    "speculative": {
+      "agreement_threshold": 0.7,
+      "agreement_window": 6,
+      "cadence_rho": 1.0,
+      "emission_probability": 1.0,
+      "gate_init": 1.0,
+      "gate_max": 1.0,
+      "gate_min": 0.0,
+      "max_notes_tokens": 64,
+      "max_snapshots": 2,
+      "min_notes_tokens": 16,
+      "mtp_proposals": 2,
+      "notes_interval": 8,
+      "read_lag": 1,
+      "stride_size": 8,
+      "topk_notes": 4
+    },
+    "token_specials": {
+      "commit": "<commit>",
+      "notes": "<notes>",
+      "plan": "<plan>",
+      "rollback": "<rollback>"
+    },
+    "vocab_size": 32000
+  },
+  "stage_history": [
+    {
+      "batches": 1.0,
+      "loss": 0.0,
+      "planner_loss": 4.385988712310791
+    },
+    {
+      "batches": 1.0,
+      "coverage_loss": 2.4,
+      "grad_ratio": 0.5,
+      "lambda_ce": 0.5,
+      "lambda_kl": 0.5,
+      "lambda_std": 0.0,
+      "loss": NaN,
+      "nli": 0.9903877377510071,
+      "notes_ce": 0.0,
+      "notes_usage": NaN,
+      "redundancy": NaN,
+      "role_adherence": 1.69970703125,
+      "rollback_loss": 0.0,
+      "spec_ce": 0.0,
+      "spec_kl": 0.0,
+      "stability_loss": 4.8,
+      "surface_ce": 10.385988235473633,
+      "training_rate_divergence": 0.0
+    },
+    {
+      "batches": 1.0,
+      "coverage_loss": 2.4,
+      "grad_ratio": 0.5,
+      "lambda_ce": 0.5,
+      "lambda_kl": 0.5,
+      "lambda_std": 0.0,
+      "loss": NaN,
+      "nli": 1.113481044769287,
+      "notes_ce": 0.0,
+      "notes_usage": NaN,
+      "redundancy": NaN,
+      "role_adherence": 1.5687235593795776,
+      "rollback_loss": 0.0,
+      "spec_ce": 0.0,
+      "spec_kl": 0.0,
+      "stability_loss": 4.8,
+      "surface_ce": 10.385988235473633,
+      "training_rate_divergence": 0.0
+    },
+    {
+      "batches": 1.0,
+      "coverage_loss": 2.4,
+      "grad_ratio": 0.5,
+      "lambda_ce": 0.5,
+      "lambda_kl": 0.5,
+      "lambda_std": 0.0,
+      "loss": NaN,
+      "nli": 1.4850181341171265,
+      "notes_ce": 0.0,
+      "notes_usage": NaN,
+      "redundancy": NaN,
+      "role_adherence": 1.731895089149475,
+      "rollback_loss": 0.0,
+      "spec_ce": 0.0,
+      "spec_kl": 0.0,
+      "stability_loss": 4.8,
+      "surface_ce": 10.385988235473633,
+      "training_rate_divergence": 0.0
+    },
+    {
+      "batches": 1.0,
+      "coverage_loss": 2.4,
+      "grad_ratio": 0.5,
+      "lambda_ce": 0.5,
+      "lambda_kl": 0.5,
+      "lambda_std": 0.0,
+      "loss": NaN,
+      "nli": 1.240096926689148,
+      "notes_ce": 0.0,
+      "notes_usage": NaN,
+      "redundancy": NaN,
+      "role_adherence": 1.322518229484558,
+      "rollback_loss": 0.0,
+      "spec_ce": 0.0,
+      "spec_kl": 0.0,
+      "stability_loss": 4.8,
+      "surface_ce": 10.385988235473633,
+      "training_rate_divergence": 0.0
+    }
+  ],
+  "stage_index": 4,
+  "timestamp": 1759417614.9481869,
+  "training_config": {
+    "batch_size": 16,
+    "curriculum": [
+      {
+        "description": "Teacher forcing on outlines",
+        "enabled_losses": [
+          "planner_ce"
+        ],
+        "name": "planner_pretrain"
+      },
+      {
+        "description": "Surface/notes lanes with gold notes",
+        "enabled_losses": [
+          "surface_ce",
+          "notes_ce"
+        ],
+        "name": "role_bootstrap"
+      },
+      {
+        "description": "Parallel decoding with lagged notes",
+        "enabled_losses": [
+          "surface_ce",
+          "notes_ce",
+          "stability"
+        ],
+        "name": "notes_bus_enable"
+      },
+      {
+        "description": "Agreement head stress tests",
+        "enabled_losses": [
+          "surface_ce",
+          "notes_ce",
+          "rollback"
+        ],
+        "name": "rollback_training"
+      },
+      {
+        "description": "Twin pass CE+KL alignment",
+        "enabled_losses": [
+          "surface_ce",
+          "notes_ce",
+          "spec_invariance"
+        ],
+        "name": "speculative_invariance"
+      }
+    ],
+    "eval_interval": 50,
+    "grad_accum_steps": 1,
+    "gradnorm_alpha": 1.5,
+    "gradnorm_eta": 0.01,
+    "gradnorm_lambda_bounds": [
+      0.1,
+      0.9
+    ],
+    "gradnorm_update_steps": 20,
+    "log_interval": 5,
+    "max_records": 400,
+    "max_seq_len": 512,
+    "max_steps": 100,
+    "mixed_precision": "bf16",
+    "multistream_dataset": "data/processed/wiki_smoke/multistream.jsonl",
+    "optimizer": {
+      "beta1": 0.9,
+      "beta2": 0.95,
+      "lr": 0.0001,
+      "weight_decay": 0.01
+    },
+    "planner_dataset": "data/processed/wiki_smoke/planner.jsonl",
+    "schema_report_path": "data/processed/wiki_smoke/schema_report.json",
+    "telemetry_dir": "experiments/wiki_smoke/telemetry",
+    "tokenizer_manifest": null,
+    "tokenizer_name": "bert-base-uncased"
+  }
+}

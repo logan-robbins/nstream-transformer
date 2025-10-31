@@ -1,3 +1,12 @@
+#N-Stream Transformer
+prototype/.claude/*
+prototype/.github/*
+prototype/docs/*
+prototype/data/*
+prototype/gpt-oss-20b/*
+prototype/gpt-oss-120b/*
+.venv/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -1,0 +1,61 @@
+{
+  "total_records": 1,
+  "processed_records": 1,
+  "max_records": null,
+  "roles": [
+    "core",
+    "intro",
+    "wrap"
+  ],
+  "role_summary": {
+    "core": {
+      "examples": 1,
+      "surface_tokens": {
+        "min": 5758,
+        "max": 5758,
+        "mean": 5758.0
+      },
+      "notes_tokens": {
+        "min": 14,
+        "max": 14,
+        "mean": 14.0
+      }
+    },
+    "intro": {
+      "examples": 1,
+      "surface_tokens": {
+        "min": 301,
+        "max": 301,
+        "mean": 301.0
+      },
+      "notes_tokens": {
+        "min": 6,
+        "max": 6,
+        "mean": 6.0
+      }
+    },
+    "wrap": {
+      "examples": 1,
+      "surface_tokens": {
+        "min": 596,
+        "max": 596,
+        "mean": 596.0
+      },
+      "notes_tokens": {
+        "min": 12,
+        "max": 12,
+        "mean": 12.0
+      }
+    }
+  },
+  "plan_summary": {
+    "min": 3,
+    "max": 3,
+    "mean": 3.0
+  },
+  "metadata_flags": {
+    "teacher_plan": 1,
+    "teacher_notes": 1
+  },
+  "speculative_note_counts": {}
+}

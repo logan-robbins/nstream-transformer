@@ -1,0 +1,21 @@
+{
+  "added_tokens": [
+    "<plan>",
+    "<notes>",
+    "<rollback>",
+    "<commit>"
+  ],
+  "identifier": "bert-base-uncased",
+  "is_fast": true,
+  "padding_side": "right",
+  "source": "pretrained",
+  "special_tokens": [
+    "<plan>",
+    "<notes>",
+    "<rollback>",
+    "<commit>"
+  ],
+  "tokenizer_class": "BertTokenizerFast",
+  "truncation_side": "right",
+  "vocab_size": 30522
+}

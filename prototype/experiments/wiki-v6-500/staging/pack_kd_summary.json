@@ -1,0 +1,19 @@
+{
+  "records": 3,
+  "notes_dim": 2048,
+  "roles": {
+    "core": 1,
+    "intro": 1,
+    "wrap": 1
+  },
+  "student_length": {
+    "min": 339,
+    "max": 6661
+  },
+  "planner_length": {
+    "min": 56,
+    "max": 56
+  },
+  "notes_dim_mismatches": 0,
+  "output_path": "data/processed/wiki-v6-500/kd.jsonl"
+}

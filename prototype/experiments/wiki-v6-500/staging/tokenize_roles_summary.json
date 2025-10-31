@@ -1,0 +1,43 @@
+{
+  "records_processed": 3,
+  "articles_seen": 1,
+  "sequence_stats": {
+    "student_ids": {
+      "count": 3,
+      "min": 339,
+      "max": 6661,
+      "mean": 2555.3333333333335,
+      "overflow": 1
+    },
+    "planner_ids": {
+      "count": 3,
+      "min": 56,
+      "max": 56,
+      "mean": 56.0,
+      "overflow": 0
+    }
+  },
+  "collator_max_length": 2048,
+  "fallback_sequences": 0,
+  "tokenizer_manifest": {
+    "source": "custom",
+    "identifier": "/Users/loganrobbins/thesis_4_v1/gpt-oss-20b/tokenizer",
+    "tokenizer_class": "PreTrainedTokenizerFast",
+    "is_fast": true,
+    "vocab_size": 199998,
+    "added_tokens": [
+      "<plan>",
+      "<notes>",
+      "<rollback>",
+      "<commit>"
+    ],
+    "special_tokens": [
+      "<plan>",
+      "<notes>",
+      "<rollback>",
+      "<commit>"
+    ],
+    "padding_side": "right",
+    "truncation_side": "right"
+  }
+}
