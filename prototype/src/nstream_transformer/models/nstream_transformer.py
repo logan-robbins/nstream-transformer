@@ -118,6 +118,43 @@ class NStreamTransformer(nn.Module):
         self.role_classifier = RoleClassifierHead(config.role_classifier_head)  # type: ignore[arg-type]
         self.plan_embedding = nn.Embedding(config.plan_vocab_size, config.hidden_size)
 
+    def to_trunk_device_and_dtype(self) -> None:
+        """Move adapters/heads to the same device and dtype as the trunk.
+
+        This avoids device/dtype mismatches during inference when the trunk is
+        materialised on CUDA/MPS and the lightweight heads remain on CPU/FP32.
+        The trunk itself is left untouched (it may be sharded by HF accelerate).
+        """
+        trunk = self.trunk_adapter.model
+        # Resolve reference param/device/dtype from the trunk
+        try:
+            ref_param = next(trunk.parameters())
+        except StopIteration:
+            # Fallback if parameters() is empty; try common attribute
+            device = getattr(trunk, "device", None)
+            dtype = None
+        else:
+            device = ref_param.device
+            dtype = ref_param.dtype
+
+        modules = (
+            self.role_adapters,
+            self.cross_attention,
+            self.planner_head,
+            self.notes_head,
+            self.speculation_head,
+            self.agreement_head,
+            self.coverage_head,
+            self.role_classifier,
+            self.plan_embedding,
+        )
+        for module in modules:
+            # Use dtype if available; otherwise only move device
+            if dtype is not None:
+                module.to(device=device, dtype=dtype)
+            elif device is not None:
+                module.to(device=device)
+
     def encode(
         self,
         input_ids: torch.Tensor,

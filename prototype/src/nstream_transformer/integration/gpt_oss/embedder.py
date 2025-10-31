@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 import torch
+from ...utils import resolve_device
 
 try:  # pragma: no cover - heavy dependency loaded at runtime
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -125,11 +126,14 @@ class GptOssEmbedder:
         return torch.cat([tensor, pad], dim=1)
 
     def _resolve_device(self, device: Optional[str]) -> str:
+        """Resolve the runtime device with CUDA preference.
+
+        Uses the shared utility which prefers CUDA, then MPS, then CPU, and
+        respects the NSTREAM_DEVICE environment variable when set.
+        """
         if device:
             return device
-        if torch.backends.mps.is_available():  # pragma: no cover - hardware specific
-            return "mps"
-        return "cpu"
+        return resolve_device()
 
     def _resolve_dtype(self, alias: str, device: str) -> torch.dtype:
         mapping = {

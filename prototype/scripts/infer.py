@@ -13,7 +13,7 @@ import argparse
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import yaml
 
@@ -49,6 +49,11 @@ from nstream_transformer.data.collator_kd import TwoBranchKDCollatorConfig
 from nstream_transformer.data.teacher_provider import TeacherRunnerConfig
 from nstream_transformer.data.tokenizer import TokenizerConfig, resolve_tokenizer
 from nstream_transformer.utils import configure_logging, seed_everything
+
+try:  # pragma: no cover - optional dependency for hidden size probing
+    from transformers import AutoConfig
+except ImportError:  # pragma: no cover - runtime path without transformers config
+    AutoConfig = None  # type: ignore[assignment]
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,14 +123,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable sampling and use greedy decoding.",
     )
-    parser.add_argument(
-        "--device",
-        choices=["cpu", "cuda", "mps"],
-        default=None,
-        help=(
-            "Override the preferred runtime device (defaults to NSTREAM_DEVICE env or auto-detect)."
-        ),
-    )
+    # Device is auto-detected via the trunk adapter; override via NSTREAM_DEVICE env if needed.
     parser.add_argument(
         "--hf-verbosity",
         choices=["critical", "error", "warning", "info", "debug"],
@@ -202,6 +200,37 @@ def parse_args() -> argparse.Namespace:
         help="Override SNC gate scalar in [0,1] (set 0 for no cross-lane influence).",
     )
     parser.add_argument(
+        "--alpha",
+        type=float,
+        default=None,
+        help="Optional override for logit blend alpha in [0,1] (1 uses attended logits only).",
+    )
+    parser.add_argument(
+        "--read-lag-delta",
+        type=int,
+        default=None,
+        help="Override Dynamic Notes Bus read lag Δ (default taken from training curriculum).",
+    )
+    parser.add_argument(
+        "--seed-text",
+        action="append",
+        default=None,
+        metavar="ROLE=TEXT",
+        help="Inject seed text for a role prior to decoding (repeat per role, format role=text).",
+    )
+    parser.add_argument(
+        "--seed-text-file",
+        type=Path,
+        default=None,
+        help="JSON file mapping role -> seed text string to preload the notes bus.",
+    )
+    parser.add_argument(
+        "--seed-notes-file",
+        type=Path,
+        default=None,
+        help="JSON file mapping role -> list[float] seed vector (length notes_dim) for initial bus snapshots.",
+    )
+    parser.add_argument(
         "--role-prefix-file",
         type=Path,
         default=None,
@@ -223,6 +252,11 @@ def parse_args() -> argparse.Namespace:
         "--verbose",
         action="store_true",
         help="Stream per-token outputs to stdout.",
+    )
+    parser.add_argument(
+        "--stream-jsonl",
+        action="store_true",
+        help="Emit a JSON line per token step with rich telemetry.",
     )
     return parser.parse_args()
 
@@ -299,6 +333,101 @@ def _coerce_training_config(payload: Dict[str, Any]) -> TrainingConfig:
     return TrainingConfig(**data)
 
 
+def _resolve_trunk_hidden_size(trunk_cfg: TrunkAdapterConfig) -> Optional[int]:
+    if AutoConfig is None:
+        return None
+    base_model = trunk_cfg.base_model
+    kwargs: Dict[str, Any] = {
+        "trust_remote_code": trunk_cfg.trust_remote_code,
+    }
+    if trunk_cfg.revision is not None:
+        kwargs["revision"] = trunk_cfg.revision
+    try:
+        candidate = Path(base_model)
+    except (TypeError, ValueError):  # pragma: no cover - defensive path
+        candidate = None
+    else:
+        if candidate.exists():
+            kwargs["local_files_only"] = True
+    try:
+        config = AutoConfig.from_pretrained(base_model, **kwargs)
+    except Exception:  # pragma: no cover - best effort probe
+        return None
+    hidden_size = getattr(config, "hidden_size", None)
+    return int(hidden_size) if hidden_size is not None else None
+
+
+def _align_model_hidden_size(model_cfg: ModelConfig, hidden_size: Optional[int], logger) -> None:
+    if hidden_size is None or hidden_size == model_cfg.hidden_size:
+        return
+    logger.info(
+        "model_hidden_size_adjust | configured=%d | trunk=%d",
+        model_cfg.hidden_size,
+        hidden_size,
+    )
+    model_cfg.hidden_size = hidden_size
+    if model_cfg.role_adapters is not None:
+        model_cfg.role_adapters = replace(model_cfg.role_adapters, hidden_size=hidden_size)
+    if model_cfg.cross_attention is not None:
+        model_cfg.cross_attention = replace(model_cfg.cross_attention, hidden_size=hidden_size)
+    if model_cfg.planner_head is not None:
+        model_cfg.planner_head = replace(model_cfg.planner_head, hidden_size=hidden_size)
+    if model_cfg.notes_head is not None:
+        model_cfg.notes_head = replace(model_cfg.notes_head, hidden_size=hidden_size)
+    if model_cfg.speculation_head is not None:
+        model_cfg.speculation_head = replace(model_cfg.speculation_head, hidden_size=hidden_size)
+    if model_cfg.agreement_head is not None:
+        model_cfg.agreement_head = replace(model_cfg.agreement_head, hidden_size=hidden_size)
+    if model_cfg.coverage_head is not None:
+        model_cfg.coverage_head = replace(model_cfg.coverage_head, hidden_size=hidden_size)
+    if model_cfg.role_classifier_head is not None:
+        model_cfg.role_classifier_head = replace(model_cfg.role_classifier_head, hidden_size=hidden_size)
+
+
+def _parse_seed_texts(arg_entries: Optional[Sequence[str]], file_path: Optional[Path]) -> Dict[str, str]:
+    seed_map: Dict[str, str] = {}
+    if file_path is not None:
+        if not file_path.exists():
+            raise FileNotFoundError(f"seed text file not found: {file_path}")
+        raw = json.loads(file_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("--seed-text-file must contain a JSON object mapping role -> text")
+        for key, value in raw.items():
+            if not isinstance(value, str):
+                raise ValueError("Seed text values must be strings.")
+            seed_map[str(key).lower()] = value
+    if arg_entries:
+        for entry in arg_entries:
+            if "=" not in entry:
+                raise ValueError("Seed text entries must use ROLE=TEXT format.")
+            role, text = entry.split("=", 1)
+            role = role.strip().lower()
+            if not role:
+                raise ValueError("Seed text role cannot be empty.")
+            seed_map[role] = text.lstrip()
+    return seed_map
+
+
+def _parse_seed_notes(file_path: Optional[Path]) -> Dict[str, List[float]]:
+    if file_path is None:
+        return {}
+    if not file_path.exists():
+        raise FileNotFoundError(f"seed notes file not found: {file_path}")
+    raw = json.loads(file_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("--seed-notes-file must contain a JSON object mapping role -> list of floats.")
+    seed_notes: Dict[str, List[float]] = {}
+    for key, value in raw.items():
+        if not isinstance(value, list) or not value:
+            raise ValueError("Seed note values must be non-empty lists of floats.")
+        try:
+            vector = [float(item) for item in value]
+        except (TypeError, ValueError) as err:
+            raise ValueError("Seed note vectors must contain numeric values.") from err
+        seed_notes[str(key).lower()] = vector
+    return seed_notes
+
+
 def override_decode_config(config: DecodeConfig, args: argparse.Namespace) -> None:
     if args.max_new_tokens is not None:
         config.max_new_tokens = int(args.max_new_tokens)
@@ -336,8 +465,7 @@ def main() -> None:
             "transformers",
         ],
     )
-    if args.device is not None:
-        _os.environ["NSTREAM_DEVICE"] = args.device
+    # Device selection is automatic; NSTREAM_DEVICE env can override if set.
     prompt = resolve_prompt(args)
     raw_cfg = load_config(args.config)
     model_cfg = _coerce_model_config(raw_cfg.get("model", {}))
@@ -357,17 +485,9 @@ def main() -> None:
         if getattr(training_cfg, "teacher_runner", None) is not None:
             training_cfg.teacher_runner = replace(training_cfg.teacher_runner, roles=tuple(role_list))
 
-    if args.device is not None:
-        trunk_cfg = model_cfg.trunk
-        dtype_alias = trunk_cfg.torch_dtype
-        if args.device == "mps" and isinstance(dtype_alias, str) and dtype_alias.lower() in {"bfloat16", "bf16"}:
-            dtype_alias = "float16"
-        device_map_override = trunk_cfg.device_map
-        if args.device != "cuda":
-            device_map_override = None
-        model_cfg.trunk = replace(trunk_cfg, torch_dtype=dtype_alias, device_map=device_map_override)
-        if hasattr(training_cfg, "device"):
-            training_cfg.device = args.device
+    _align_model_hidden_size(model_cfg, _resolve_trunk_hidden_size(model_cfg.trunk), logger)
+
+    # No device override via CLI; trunk adapter resolves device and dtype (incl. MPS-safe downgrade).
 
     hierarchy_levels: Optional[Tuple[Tuple[str, ...], ...]] = None
     if args.hierarchy_level:
@@ -406,6 +526,21 @@ def main() -> None:
     seed_override = args.seed if args.seed is not None else getattr(training_cfg, "seed", None)
     seed_everything(seed_override)
 
+    alpha_override: Optional[float] = None
+    if args.alpha is not None:
+        if not (0.0 <= args.alpha <= 1.0):
+            raise ValueError("--alpha must lie within [0,1].")
+        alpha_override = float(args.alpha)
+
+    read_lag_override: Optional[int] = None
+    if args.read_lag_delta is not None:
+        if args.read_lag_delta < 0:
+            raise ValueError("--read-lag-delta must be non-negative.")
+        read_lag_override = int(args.read_lag_delta)
+
+    seed_text_map = _parse_seed_texts(args.seed_text, args.seed_text_file)
+    seed_notes_map = _parse_seed_notes(args.seed_notes_file)
+
     logger.info(
         "infer_start | config=%s | prompt_chars=%d | base_model=%s",
         str(args.config),
@@ -415,6 +550,8 @@ def main() -> None:
 
     model = NStreamTransformer(model_cfg)
     model.trunk_adapter.load_model()
+    # Align lightweight heads/adapters to the trunk device/dtype
+    model.to_trunk_device_and_dtype()
     logger.info(
         "trunk_loaded | base_model=%s | device=%s",
         model_cfg.trunk.base_model,
@@ -436,6 +573,8 @@ def main() -> None:
             state = torch.load(args.checkpoint, map_location="cpu")
         if isinstance(state, dict):
             model.load_adapters(state, strict=False)
+            # Ensure any newly loaded tensors are on the trunk device/dtype
+            model.to_trunk_device_and_dtype()
 
     inference_cfg = build_inference_config(
         training_cfg,
@@ -443,7 +582,11 @@ def main() -> None:
         rng_seed=seed_override,
         topology=topology_override,
         hierarchy_levels=hierarchy_levels,
+        logit_blend_alpha=alpha_override,
+        read_lag_delta=read_lag_override,
     )
+    if inference_cfg.decode.max_new_tokens < 512 and args.max_new_tokens is None:
+        inference_cfg.decode.max_new_tokens = 512
     if seed_override is not None:
         inference_cfg.rng_seed = seed_override
         inference_cfg.decode.seed = seed_override
@@ -502,7 +645,12 @@ def main() -> None:
         except Exception:
             raise
 
-    orchestrator.start(prompt, prefix_by_role=role_prefix_map)
+    orchestrator.start(
+        prompt,
+        prefix_by_role=role_prefix_map,
+        seed_text_by_role=seed_text_map or None,
+        seed_notes_by_role=seed_notes_map or None,
+    )
 
     events: list[StepOutcome] = []
     while True:
@@ -512,6 +660,25 @@ def main() -> None:
         events.append(outcome)
         if args.verbose:
             logger.info(format_event(outcome))
+        if args.stream_jsonl:
+            step_payload = {
+                "step": len(events),
+                "role": outcome.role,
+                "token_id": outcome.token_id,
+                "token_text": outcome.token_text,
+                "stride_index": outcome.stride_index,
+                "stride_completed": outcome.stride_completed,
+                "role_completed": outcome.role_completed,
+                "agreement": outcome.agreement,
+                "notes_emitted": outcome.notes_emitted,
+                "rollback_performed": outcome.rollback_performed,
+                "cadence_mode": outcome.cadence_mode,
+                "cadence_probability": outcome.cadence_probability,
+                "cadence_multiplier": outcome.cadence_multiplier,
+                "cadence_forced": outcome.cadence_forced,
+                "coverage_logits": outcome.coverage_logits,
+            }
+            print(json.dumps(step_payload, ensure_ascii=False), flush=True)
 
     manifest = orchestrator.finalize()
     manifest["prompt"] = prompt

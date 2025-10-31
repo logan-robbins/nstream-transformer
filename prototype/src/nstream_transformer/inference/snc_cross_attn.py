@@ -42,6 +42,8 @@ class SharedNotesCrossAttention(nn.Module):
     ) -> torch.Tensor:  # type: ignore[override]
         batch, sequence, _ = hidden_states.size()
         _, notes_len, _ = notes.size()
+        if notes_len == 0:
+            return hidden_states
         q = self.q_proj(hidden_states)
         k = self.k_proj(notes)
         v = self.v_proj(notes)

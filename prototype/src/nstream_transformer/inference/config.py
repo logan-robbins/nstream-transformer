@@ -281,6 +281,7 @@ def build_inference_config(
     cadence_policy: Optional[Any] = None,
     hierarchy_levels: Optional[Sequence[Sequence[str]]] = None,
     topology_hierarchy: Optional[Mapping[str, Sequence[str]]] = None,
+    read_lag_delta: Optional[int] = None,
 ) -> InferenceConfig:
     """Derive an :class:`InferenceConfig` aligned with the training curriculum."""
 
@@ -291,7 +292,7 @@ def build_inference_config(
     curriculum = training_config.curriculum
     stride_B = int(curriculum.B)
     commit_L = int(curriculum.L)
-    read_lag_delta = int(curriculum.delta)
+    read_lag = int(read_lag_delta) if read_lag_delta is not None else int(curriculum.delta)
     max_snapshots_K = int(max_snapshots) if max_snapshots is not None else max(stride_B, 4)
 
     cadence_payload: Dict[str, float] = {
@@ -354,7 +355,7 @@ def build_inference_config(
         roles=ordered_roles,
         stride_B=stride_B,
         commit_L=commit_L,
-        read_lag_delta=read_lag_delta,
+        read_lag_delta=read_lag,
         max_snapshots_K=max_snapshots_K,
         topology=topology_value,
         gate_g=gate_g if gate_g is not None else 1.0,

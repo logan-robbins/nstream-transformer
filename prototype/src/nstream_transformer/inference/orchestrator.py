@@ -157,6 +157,8 @@ class MultiStreamOrchestrator:
         planner_notes: Optional[Any] = None,
         *,
         prefix_by_role: Optional[Dict[str, str]] = None,
+        seed_text_by_role: Optional[Dict[str, str]] = None,
+        seed_notes_by_role: Optional[Dict[str, Sequence[float]]] = None,
     ) -> None:
         """Initialise decoding state from a prompt."""
 
@@ -173,7 +175,8 @@ class MultiStreamOrchestrator:
         if not prefix_by_role:
             default_encoded = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
 
-        with torch.inference_mode():
+        # Use no_grad to avoid autograd tracking while keeping tensors mutable for downstream heads.
+        with torch.no_grad():
             for index, role in enumerate(self.config.roles):
                 if prefix_by_role and role in prefix_by_role:
                     role_prompt = f"{prefix_by_role[role]}{prompt}"
@@ -224,13 +227,18 @@ class MultiStreamOrchestrator:
                 self.states[role] = state
                 self._attended_history[role] = []
 
+        self._inject_initial_seeds(
+            seed_text_by_role or {},
+            seed_notes_by_role or {},
+        )
+
         for role, state in self.states.items():
             window = self.window_builder.build(state, self.bus_by_role)
             state.update_notes_window(window.notes, window.mask)
             self._mark_versions_consumed(state, window.producers, window.versions)
 
         if self._plan_token_ids is not None and self._plan_mask is not None:
-            plan_ids = self._plan_token_ids.to(device=self.device, dtype=torch.long)
+            plan_ids = self._plan_token_ids.to(device=self.device, dtype=torch.long).clone()
             self._plan_embeddings = self.model.plan_embedding(plan_ids).detach()
             self._plan_mask_bool = self._plan_mask.to(dtype=torch.bool, device=self.device)
             self._plan_ids_list = [int(value) for value in plan_ids.view(-1).tolist()]
@@ -299,6 +307,12 @@ class MultiStreamOrchestrator:
 
         state.register_commit()
 
+        role_finished = self._role_completed(state)
+        if role_finished:
+            self._completed_roles.add(role)
+        else:
+            self._completed_roles.discard(role)
+
         cadence = self.config.cadence_for(role)
         notes_emitted = False
         rollback_performed = False
@@ -333,8 +347,6 @@ class MultiStreamOrchestrator:
             coverage_list = self._coverage_current(role)
 
         outcome = self.scheduler.advance()
-        if outcome.role_completed:
-            self._completed_roles.add(role)
         if outcome.stride_completed:
             self._on_stride_complete()
 
@@ -417,6 +429,7 @@ class MultiStreamOrchestrator:
             "roles": {
                 role: {
                     "text": state.generated_text,
+                    "token_texts": list(state.generated_pieces),
                     "token_ids": list(state.generated_tokens),
                     "latest_version": state.latest_snapshot_version,
                     "rollback_buffer": list(state.rollback_buffer),
@@ -443,6 +456,77 @@ class MultiStreamOrchestrator:
     # --------------------------------------------------------------------- #
     # Internal helpers
     # --------------------------------------------------------------------- #
+
+    def _inject_initial_seeds(
+        self,
+        seed_text_by_role: Dict[str, str],
+        seed_notes_by_role: Dict[str, Sequence[float]],
+    ) -> None:
+        if not seed_text_by_role and not seed_notes_by_role:
+            return
+        notes_dim = self._resolve_notes_dim()
+        with torch.no_grad():
+            for role, text in seed_text_by_role.items():
+                role_norm = role.lower()
+                if role_norm not in self.states:
+                    raise ValueError(f"Seed text provided for unknown role {role!r}.")
+                if not text.strip():
+                    continue
+                seed_tensor = self._seed_from_text(role_norm, text)
+                snapshot = self.bus_by_role[role_norm].push(seed_tensor, stride=0)
+                self.states[role_norm].mark_snapshot_version(snapshot.version)
+                self.states[role_norm].reset_snapshot_counter()
+            for role, vector in seed_notes_by_role.items():
+                role_norm = role.lower()
+                if role_norm not in self.states:
+                    raise ValueError(f"Seed notes provided for unknown role {role!r}.")
+                tensor = torch.as_tensor(vector, device=self.device, dtype=self.dtype)
+                if tensor.numel() != notes_dim:
+                    raise ValueError(
+                        f"Seed notes for role {role!r} must have length {notes_dim}, received {tensor.numel()}."
+                    )
+                seed_tensor = tensor.view(1, 1, notes_dim).to(dtype=self.dtype)
+                snapshot = self.bus_by_role[role_norm].push(seed_tensor, stride=0)
+                self.states[role_norm].mark_snapshot_version(snapshot.version)
+                self.states[role_norm].reset_snapshot_counter()
+
+    def _seed_from_text(self, role: str, text: str) -> torch.Tensor:
+        with torch.no_grad():
+            encoded = self.tokenizer(
+                text,
+                return_tensors="pt",
+                add_special_tokens=True,
+                truncation=True,
+            )
+            input_ids = encoded["input_ids"].to(self.device)
+            attention_mask = encoded.get("attention_mask")
+            if attention_mask is None:
+                attention_mask = torch.ones_like(input_ids, device=self.device)
+            else:
+                attention_mask = attention_mask.to(self.device)
+            outputs = self._run_trunk(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                past_key_values=None,
+            )
+            hidden = outputs.hidden_states[-1]
+            pooled = hidden.mean(dim=1, keepdim=True)
+            notes_dim = self._resolve_notes_dim()
+            if pooled.size(-1) > notes_dim:
+                pooled = pooled[..., :notes_dim]
+            elif pooled.size(-1) < notes_dim:
+                pad = torch.zeros(
+                    pooled.size(0),
+                    pooled.size(1),
+                    notes_dim - pooled.size(-1),
+                    device=pooled.device,
+                    dtype=pooled.dtype,
+                )
+                pooled = torch.cat([pooled, pad], dim=-1)
+            norm = torch.linalg.norm(pooled, dim=-1, keepdim=True)
+            norm = torch.clamp(norm, min=1e-6)
+            pooled = pooled / norm
+            return pooled.to(device=self.device, dtype=self.dtype)
 
     def _reset_runtime_state(self) -> None:
         self.states.clear()

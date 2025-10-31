@@ -3,7 +3,7 @@ name = "nstream-transformer"
 version = "0.1.0"
 description = "Toy N-Stream Transformer architecture scaffold inspired by DeepSeek."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [
   { name = "Logan Robbins" }
 ]
@@ -16,7 +16,8 @@ dependencies = [
   "omegaconf>=2.3.0",
   "matplotlib>=3.10.6",
   "transformers>=4.56.2",
-  "torch>=2.9.0",
+  # Torch GPU is the only runtime requirement; keep flexible across Lambda images
+  "torch>=2.8,<3.0",
   "tiktoken>=0.7.0",
   "protobuf>=4.25.3",
   "accelerate>=0.34.2",
@@ -38,12 +39,11 @@ data = [
 ]
 # GPU stack to be installed on CUDA hosts only.
 gpu = [
-  "torch>=2.4.0",
-  "xformers>=0.0.28",
+  # No extra packages required beyond core `torch` for this codebase
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
   "ruff>=0.6.3",
   "mypy>=1.11",
 ]

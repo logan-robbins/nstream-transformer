@@ -5,7 +5,10 @@ prototype/docs/*
 prototype/data/*
 prototype/gpt-oss-20b/*
 prototype/gpt-oss-120b/*
+prototype/private/*
+prototype/experiments/*
 .venv/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
